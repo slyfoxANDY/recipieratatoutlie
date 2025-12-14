@@ -1,0 +1,83 @@
+import { GoogleGenerativeAI } from '@google/generative-ai'
+import { UserProfile } from '../types'
+
+// @ts-ignore - Vite will provide this at runtime
+const API_KEY = import.meta.env.VITE_GEMINI_API_KEY as string
+
+console.log('🔑 Chat API Key loaded:', API_KEY ? '✅ Present' : '❌ Missing')
+
+if (!API_KEY) {
+  console.error('❌ VITE_GEMINI_API_KEY is not set')
+}
+
+const genAI = new GoogleGenerativeAI(API_KEY || 'dummy')
+
+export async function chatWithGemini(
+  userMessage: string,
+  ingredients: string[],
+  userProfile: UserProfile | null
+): Promise<string> {
+  const ingredientsList = ingredients.join(', ')
+  const skillLevel = userProfile?.skillLevel || 'Beginner'
+  const timeAvailable = userProfile?.timeAvailable || 30
+  const flavorPrefs = userProfile?.flavorPreferences.join(', ') || 'varied'
+
+  // Check if user is trying to add ingredients
+  const ingredientMatch = userMessage.match(/^(add|include|have|got|i have|ingredients?:?)\s+(.+)/i)
+  let processedMessage = userMessage
+
+  if (ingredientMatch) {
+    const newIngredients = ingredientMatch[2]
+      .split(',')
+      .map((ing) => ing.trim())
+      .filter((ing) => ing.length > 0)
+
+    processedMessage = `I want to add these ingredients: ${newIngredients.join(', ')}`
+  }
+
+  const systemPrompt = `You are Nonna Maria, a warm, motherly Italian cooking master chef with 40 years of experience. You're chatting with a student in your kitchen.
+
+STUDENT'S AVAILABLE INGREDIENTS: ${ingredientsList || 'None mentioned yet'}
+STUDENT'S PROFILE:
+- Cooking Skill: ${skillLevel}
+- Time Available: ${timeAvailable} minutes
+- Flavor Preferences: ${flavorPrefs}
+
+YOUR ROLE:
+1. Be warm, encouraging, and grandmotherly in tone
+2. Suggest recipes using ONLY available ingredients
+3. Provide clear, easy-to-follow instructions
+4. Adapt recipes to the student's skill level
+5. Keep cooking time within their available time
+6. If they mention new ingredients, acknowledge and remember them for future suggestions
+7. Answer cooking questions with wisdom from your 40 years of experience
+
+RESPONSE GUIDELINES:
+- Keep responses conversational and warm, like talking to a grandmother
+- If suggesting a recipe, format it clearly with name, ingredients, steps
+- If they ask about adding ingredients, acknowledge and use them going forward
+- Use emojis occasionally to make it friendly
+- Ask follow-up questions if you need clarification`
+
+  try {
+    console.log('💬 Sending message to Gemini:', processedMessage)
+
+    // Try using the SDK's generateContent method
+    const model = genAI.getGenerativeModel({ model: 'gemini-pro' })
+    
+    const result = await model.generateContent(
+      systemPrompt + '\n\nSTUDENT: ' + processedMessage
+    )
+
+    const response = await result.response
+    const text = response.text()
+
+    console.log('✅ Got response from Gemini')
+    return text
+  } catch (error) {
+    console.error('❌ Error chatting with Gemini:', error)
+    const errorMsg =
+      error instanceof Error ? error.message : 'Failed to get response from Gemini'
+    throw new Error(`Chat error: ${errorMsg}`)
+  }
+}
