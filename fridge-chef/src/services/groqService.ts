@@ -9,6 +9,59 @@ if (!API_KEY) {
   console.error('❌ VITE_GROQ_API_KEY is not set')
 }
 
+// Models to try in order
+const MODELS_TO_TRY = [
+  'mixtral-8x7b-32768',
+  'llama-3.1-70b-versatile',
+  'llama-3.1-8b-instant',
+  'gemma-2-9b-it',
+  'gemma2-9b-it',
+]
+
+let cachedModel: string | null = null
+
+async function getAvailableModel(): Promise<string> {
+  if (cachedModel) {
+    console.log('📦 Using cached model:', cachedModel)
+    return cachedModel
+  }
+
+  console.log('🔍 Finding available Groq model...')
+
+  for (const model of MODELS_TO_TRY) {
+    try {
+      console.log(`  Trying ${model}...`)
+      
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: 'user', content: 'test' }],
+          max_tokens: 1,
+        }),
+      })
+
+      // If we get a response (even if it's an error about content), model exists
+      if (response.status !== 404 && response.status !== 400) {
+        console.log(`✅ Found working model: ${model}`)
+        cachedModel = model
+        return model
+      }
+    } catch (error) {
+      console.log(`  ✗ ${model} failed`)
+    }
+  }
+
+  // Default to mixtral
+  console.warn('⚠️ Using default model: mixtral-8x7b-32768')
+  cachedModel = 'mixtral-8x7b-32768'
+  return 'mixtral-8x7b-32768'
+}
+
 export async function chatWithGroq(
   userMessage: string,
   ingredients: string[],
@@ -59,6 +112,10 @@ RESPONSE GUIDELINES:
   try {
     console.log('💬 Sending message to Groq:', processedMessage)
 
+    // Get the working model
+    const model = await getAvailableModel()
+    console.log('🤖 Using model:', model)
+
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -66,7 +123,7 @@ RESPONSE GUIDELINES:
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'mixtral-8x7b-32768',
+        model: model,
         messages: [
           {
             role: 'system',
